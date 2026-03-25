@@ -24,8 +24,15 @@ git add .
 - First commit
 git commit -m "Initial project setup"
 
-- (Optional) Connect to GitHub
+- Connect to GitHub
 git remote add origin <your-repo-url>
 
 - Push code
 git push -u origin main
+
+## Initialize Dvc
+
+- Initialize repository
+dvc init
+
+
