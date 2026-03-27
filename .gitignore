@@ -5,6 +5,13 @@ __pycache__/
 # C extensions
 *.so
 
+# MLflow
+mlruns/
+mlartifacts/
+
+# Plots / reports (optional but recommended)
+reports/figures/
+
 # Distribution / packaging
 .Python
 env/

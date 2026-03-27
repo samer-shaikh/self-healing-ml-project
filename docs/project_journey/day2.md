@@ -34,6 +34,9 @@ test_data = DataLoader.load_data(data_path, "online_shoppers_intention_test.csv"
 
 ```
 
+---
+
+
 ### 3. Handling Missing Values
 
 * Calculated median from training data:
@@ -47,6 +50,8 @@ test_data = column_transformation(test_data, median_val)
 ```
 
 * Prevented data leakage by not using test data statistics.
+
+---
 
 ### 4. Column Transformation Function
 
@@ -64,6 +69,8 @@ Key Responsibilities:
 
 👉 Made preprocessing reusable across pipeline stages.
 
+---
+
 ### 5. Feature Scaling & Encoding
 
 ``` python
@@ -78,6 +85,8 @@ Used:
 
 👉 Ensured consistent transformations across train and test datasets.
 
+---
+
 ### 6. Saving Processed Data
 
 Saved processed datasets:
@@ -89,6 +98,8 @@ DataLoader.save_data(output_path, "online_shoppers_intention_test.csv", test)
 
 👉 Created clean processed datasets for model training.
 
+---
+
 🧠 Key Learnings
 * Importance of avoiding data leakage
 * Why preprocessing must use only training data statistics
@@ -97,11 +108,15 @@ DataLoader.save_data(output_path, "online_shoppers_intention_test.csv", test)
 * transformations
 * Difference between raw vs processed data layers
 
+---
+
 ⚠️ Challenges Faced
 * Handling missing values for only one column (needs generalization)
 * Pipeline not fully automated yet
 * Confusion around when to split vs preprocess (resolved: split first, then preprocess)
 * Need better structure for feature engineering
+
+---
 
 💬 Notes
 * Always compute statistics (median/mean) using training data only

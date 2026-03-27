@@ -43,7 +43,7 @@ def column_scaling(train:pd.DataFrame,test:pd.DataFrame):
 
     # fatch the column names
     num_cols = train.select_dtypes(include=["int64", "float64"]).columns
-    object_cols = train.select_dtypes(include=["object"]).columns
+    object_cols = train.select_dtypes(include=["object","string","category"]).columns
 
     # making the transformer 
     transformer = ColumnTransformer(transformers=[
@@ -58,8 +58,12 @@ def column_scaling(train:pd.DataFrame,test:pd.DataFrame):
 
     feature_names = transformer.get_feature_names_out()
 
+    # naming the right name to the all columns 
     train = pd.DataFrame(train_arr, columns=feature_names) # type: ignore
     test = pd.DataFrame(test_arr, columns=feature_names) # type: ignore
+
+    train = train.rename(columns={"remainder__Revenue": "Revenue"})
+    test = test.rename(columns={"remainder__Revenue": "Revenue"})
 
     return train,test
 
