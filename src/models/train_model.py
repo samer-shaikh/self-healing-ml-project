@@ -9,7 +9,10 @@ import time
 import pathlib
 import matplotlib.pyplot as plt
 import mlflow
-
+import optuna
+from sklearn.model_selection import cross_val_score
+import joblib
+from optuna.study import Study
 
 def plot_model_details(metrics: list, logs: dict,save_path):
     count = 0
@@ -107,13 +110,132 @@ def plot_bubble(logs, save_path):
 
     plt.xlabel("Prediction Time")
     plt.ylabel("F1 Score")
-    plt.title("🚀 Model Performance Landscape")
+    plt.title("Model Performance Landscape")
 
     plt.colorbar(scatter, label="Accuracy")
     plt.grid(alpha=0.3)
 
     plt.tight_layout()
     plt.savefig(f"{save_path}bubble_plot.png")
+
+def optimize_random_forest(X_train, y_train):
+
+    def objective(trial):
+        params = {
+            "n_estimators": trial.suggest_int("n_estimators", 100, 300),
+            "max_depth": trial.suggest_int("max_depth", 5, 30),
+            "min_samples_split": trial.suggest_int("min_samples_split", 2, 10),
+        }
+
+        model = RandomForestClassifier(**params,random_state=42)
+
+        score = cross_val_score(
+            model, X_train, y_train,
+            cv=3,
+            scoring="roc_auc"
+        ).mean()
+
+        return score
+
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=20)
+
+    return study
+
+def optimize_extra_trees(X_train, y_train):
+    def objective(trial):
+        params = {
+            "n_estimators": trial.suggest_int("n_estimators", 100, 400),
+            "max_depth": trial.suggest_int("max_depth", 5, 50),
+            "min_samples_split": trial.suggest_int("min_samples_split", 2, 10),
+        }
+
+        model = ExtraTreesClassifier(**params, random_state=42)
+
+        score = cross_val_score(
+            model, X_train, y_train,
+            cv=3,
+            scoring="roc_auc"
+        ).mean()
+
+        return score
+
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=30)
+
+    return study
+
+def optimize_xgboost(X_train, y_train):
+    def objective(trial):
+        params = {
+            "n_estimators": trial.suggest_int("n_estimators", 100, 400),
+            "max_depth": trial.suggest_int("max_depth", 3, 10),
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
+            "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+            "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+        }
+
+        model = XGBClassifier(
+            **params,
+            eval_metric="logloss"
+        )
+
+        score = cross_val_score(
+            model, X_train, y_train,
+            cv=3,
+            scoring="roc_auc"
+        ).mean()
+
+        return score
+
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=50)
+
+    return study
+
+def optimize_logistic(X_train, y_train):
+    def objective(trial):
+        params = {
+            "C": trial.suggest_float("C", 0.01, 10.0, log=True),
+            "solver": trial.suggest_categorical("solver", ["liblinear", "lbfgs"]),
+        }
+
+        model = LogisticRegression(**params, max_iter=1000)
+
+        score = cross_val_score(
+            model, X_train, y_train,
+            cv=3,
+            scoring="roc_auc"
+        ).mean()
+
+        return score
+
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=30)
+
+    return study
+
+def optimize_adaboost(X_train, y_train):
+    def objective(trial):
+        params = {
+            "n_estimators": trial.suggest_int("n_estimators", 50, 200),
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 1.0),
+        }
+
+        model = AdaBoostClassifier(**params)
+
+        score = cross_val_score(
+            model, X_train, y_train,
+            cv=3,
+            scoring="roc_auc"
+        ).mean()
+
+        return score
+
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=30)
+
+    return study
 
 
 def main():
@@ -122,7 +244,7 @@ def main():
     home_dir = corr_dir.parent.parent.parent
 
     data_path = home_dir.as_posix() + "/data/processed/"
-    output_path = home_dir.as_posix() + "/models/processed/"
+    output_path = home_dir.as_posix() + "/models/"
     plot_path = home_dir.as_posix() + "/reports/figures/"
 
     print("mlflow load")
@@ -148,7 +270,7 @@ def main():
                 "ExtraTrees": ExtraTreesClassifier(),
                 "LogisticRegression": LogisticRegression(max_iter=1000),
                 "AdaBoostClassifier":AdaBoostClassifier(),
-                "xgboost":XGBClassifier(use_label_encoder=False, eval_metric="logloss")
+                "xgboost":XGBClassifier(eval_metric="logloss")
             }
 
     logs = {}
@@ -195,14 +317,103 @@ def main():
             mlflow.log_metric("roc_auc", roc_auc) # type: ignore
             mlflow.log_metric("Train_time",train_time)
             mlflow.log_metric("Pred_time",pred_time)
-
-
             
             # Log model
-            mlflow.sklearn.log_model(model, artifact_path="model") # type: ignore
+            mlflow.sklearn.log_model(model, name="model") # type: ignore
 
     plot_model_details(metrics,logs,plot_path)
     mlflow.end_run()
+
+    sorted_models = sorted(logs.items(), key=lambda x: x[1][3], reverse=True)
+    top_models = [model[0] for model in sorted_models[:3]]
+
+    print("Top Models:", top_models)
+
+    # hyperparameter tuning
+    print("hyperparameter tuning")
+    mlflow.set_experiment("model_hyperparameter_tuning")
+
+    tuned_results = {}
+    model = None
+
+
+
+    for model_name in top_models:
+
+        print(f"Tuning {model_name}...")
+        with mlflow.start_run(run_name=f"optuna {model_name}") as parent:
+            if model_name == "RandomForest":
+                print("RF")
+                study: Study =  optimize_random_forest(X_train, y_train)
+                best_score = study.best_trial.value
+                best_params = study.best_params
+                model = RandomForestClassifier(**best_params)
+            elif model_name == "ExtraTrees":
+                print("ET")
+                study: Study = optimize_extra_trees(X_train, y_train)
+                best_score = study.best_trial.value
+                best_params = study.best_params
+                model = ExtraTreesClassifier(**best_params)
+
+            elif model_name == "xgboost":
+                print("XG")
+                study: Study = optimize_xgboost(X_train, y_train)
+                best_score = study.best_trial.value
+                best_params = study.best_params
+                model = XGBClassifier(**best_params, use_label_encoder=False, eval_metric="logloss")
+
+            elif model_name == "LogisticRegression":
+                study: Study = optimize_logistic(X_train, y_train)
+                best_score = study.best_trial.value
+                best_params = study.best_params
+                model = LogisticRegression(**best_params, max_iter=1000)
+
+            elif model_name == "AdaBoost":
+                study: Study = optimize_adaboost(X_train, y_train)
+                best_score = study.best_trial.value
+                best_params = study.best_params
+                model = AdaBoostClassifier(**best_params)
+
+            #log all the children
+            for trial in study.trials:
+
+                with mlflow.start_run(nested=True,run_name=f"trial number {trial.number+1}") as child:
+                    
+                    mlflow.log_params(trial.params)
+                    if trial.value is not None:
+                        mlflow.log_metric("roc_auc", trial.value)
+
+            #logging the best model
+    print("best model")
+
+    final_model_name = max(tuned_results, key=lambda x: tuned_results[x][1])
+    final_model = tuned_results[final_model_name][0]
+    final_score = tuned_results[final_model_name][1]
+    model_name = final_model_name
+
+    mlflow.set_tag("model_name", model_name)            
+    model.fit(X_train, y_train) # type: ignore
+
+    # Evaluate again
+    if hasattr(model, "predict_proba"):
+        y_prob = model.predict_proba(X_test)[:, 1]
+    else:
+        y_prob = model.decision_function(X_test)
+
+    roc_auc = roc_auc_score(y_test, y_prob)
+
+    tuned_results[model_name] = (model, roc_auc)
+
+    # Log best params
+    print("best parameters")
+    mlflow.log_params(study.best_params)
+    mlflow.log_metric(f"{model_name}_tuned_roc_auc", roc_auc)
+
+
+    print(f"Final Best Model: {final_model_name} with ROC-AUC: {final_score}")
+            
+    joblib.dump(final_model, output_path + "/final_model.joblib")
+    mlflow.sklearn.log_model(final_model, name="final_model")
 
 if __name__ == "__main__":
     main()
