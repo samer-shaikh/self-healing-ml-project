@@ -13,6 +13,7 @@ import optuna
 from sklearn.model_selection import cross_val_score
 import joblib
 from optuna.study import Study
+from src.models.model_monitor import should_update_model
 
 def plot_model_details(metrics: list, logs: dict,save_path):
     count = 0
@@ -249,7 +250,7 @@ def main():
 
     print("mlflow load")
     # Specify the tracking URI for the MLflow server.
-    mlflow.set_tracking_uri("http://localhost:5000")
+    mlflow.set_tracking_uri("http://127.0.0.1:5000")
 
     # Specify the experiment you just created for your LLM application or AI agent.
     mlflow.set_experiment("self_healing_model_v1")
@@ -308,7 +309,6 @@ def main():
             plot_confusion_matrix(y_test,y_pred,name,plot_path)
             plot_roc_curve(y_test, y_prob, name,plot_path)
             plot_precision_recall_curve(y_test, y_prob, name,plot_path)
-            plot_bubble(logs,plot_path)
 
             # Log metrics        
             mlflow.log_metric("accuracy", acc) # type: ignore
@@ -321,6 +321,7 @@ def main():
             # Log model
             mlflow.sklearn.log_model(model, name="model") # type: ignore
 
+    plot_bubble(logs,plot_path)
     plot_model_details(metrics,logs,plot_path)
     mlflow.end_run()
 
@@ -368,7 +369,7 @@ def main():
                 best_params = study.best_params
                 model = LogisticRegression(**best_params, max_iter=1000)
 
-            elif model_name == "AdaBoost":
+            elif model_name == "AdaBoostClassifier":
                 study: Study = optimize_adaboost(X_train, y_train)
                 best_score = study.best_trial.value
                 best_params = study.best_params
@@ -383,37 +384,38 @@ def main():
                     if trial.value is not None:
                         mlflow.log_metric("roc_auc", trial.value)
 
-            #logging the best model
+        tuned_results[model_name] = (model,best_score, best_params)
+    #logging the best model
     print("best model")
 
     final_model_name = max(tuned_results, key=lambda x: tuned_results[x][1])
-    final_model = tuned_results[final_model_name][0]
-    final_score = tuned_results[final_model_name][1]
+    final_model, final_score, final_params = tuned_results[final_model_name]
     model_name = final_model_name
 
-    mlflow.set_tag("model_name", model_name)            
-    model.fit(X_train, y_train) # type: ignore
+    with mlflow.start_run(run_name=model_name):
 
-    # Evaluate again
-    if hasattr(model, "predict_proba"):
-        y_prob = model.predict_proba(X_test)[:, 1]
-    else:
-        y_prob = model.decision_function(X_test)
+        mlflow.set_tag("model_name", model_name)            
+        final_model.fit(X_train, y_train) # type: ignore
 
-    roc_auc = roc_auc_score(y_test, y_prob)
+        # Evaluate again
+        if hasattr(final_model, "predict_proba"):
+            y_prob = final_model.predict_proba(X_test)[:, 1]
+        else:
+            y_prob = final_model.decision_function(X_test)
 
-    tuned_results[model_name] = (model, roc_auc)
-
-    # Log best params
-    print("best parameters")
-    mlflow.log_params(study.best_params)
-    mlflow.log_metric(f"{model_name}_tuned_roc_auc", roc_auc)
+        roc_auc = roc_auc_score(y_test, y_prob)
 
 
-    print(f"Final Best Model: {final_model_name} with ROC-AUC: {final_score}")
-            
-    joblib.dump(final_model, output_path + "/final_model.joblib")
-    mlflow.sklearn.log_model(final_model, name="final_model")
+        # Log best params
+        mlflow.log_param("best_model", final_model_name)
+        mlflow.log_params(final_params)
+        mlflow.log_metric("best_score", final_score)
+
+
+        print(f"Final Best Model: {final_model_name} with ROC-AUC: {final_score}")
+                
+        should_update_model(output_path,final_model, final_score, final_model_name)
+        mlflow.sklearn.log_model(final_model, name="final_model")
 
 if __name__ == "__main__":
     main()

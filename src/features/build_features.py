@@ -3,6 +3,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler,OneHotEncoder
 import pandas as pd
 import pathlib
+import joblib
 
 def column_transformation(data: pd.DataFrame, median_val) -> pd.DataFrame:
 
@@ -62,10 +63,7 @@ def column_scaling(train:pd.DataFrame,test:pd.DataFrame):
     train = pd.DataFrame(train_arr, columns=feature_names) # type: ignore
     test = pd.DataFrame(test_arr, columns=feature_names) # type: ignore
 
-    train = train.rename(columns={"remainder__Revenue": "Revenue"})
-    test = test.rename(columns={"remainder__Revenue": "Revenue"})
-
-    return train,test
+    return train,test,transformer
 
 
 def main():
@@ -79,15 +77,29 @@ def main():
     train_data = DataLoader.load_data(data_path,"online_shoppers_intention_train.csv")
     test_data = DataLoader.load_data(data_path,"online_shoppers_intention_test.csv")
 
-    median_val = train_data["ProductRelated_Duration"].median()
-    train_data = column_transformation(train_data,median_val)
-    test_data = column_transformation(test_data,median_val)
+    
+    X_train = train_data.drop(columns="Revenue")
+    X_test = test_data.drop(columns="Revenue")
 
-    train,test = column_scaling(train_data,test_data)
+    y_train = train_data["Revenue"]
+    y_test = test_data["Revenue"]
+
+    median_val = X_train["ProductRelated_Duration"].median()
+    train_data = column_transformation(X_train,median_val)
+    test_data = column_transformation(X_test,median_val)
+    
+    train,test,transformer = column_scaling(train_data,test_data)
+
+    train["Revenue"] = y_train
+    test["Revenue"] = y_test
+
 
     res = DataLoader.save_data(output_path,"online_shoppers_intention_train.csv",train)
     res = DataLoader.save_data(output_path,"online_shoppers_intention_test.csv",test)
+    joblib.dump(median_val, f"{home_dir}/models/median.pkl")
+    joblib.dump(transformer, f"{home_dir}/models/preprocessor.joblib")
     print(res)
+    print(train.columns)
 
 if __name__ == "__main__":
     main()
